@@ -1,0 +1,32 @@
+# Python virtual environment
+venv/
+ENV/
+env/
+.venv/
+
+# Compiled bytecode
+__pycache__/
+*.py[cod]
+*.so
+
+# Egg metadata
+*.egg-info/
+dist/
+build/
+
+# Environment variables
+.env
+.env.*
+
+# Uploaded files (e.g., DICOMs)
+uploads/
+
+# Log files
+*.log
+
+# OS-specific files
+.DS_Store
+
+# Editor directories and files
+.vscode/
+.idea/
