@@ -34,8 +34,7 @@ roboflow_client = InferenceHTTPClient(
 )
 
 # OpenRouter API key
-OPENROUTER_API_KEY = "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"
-
+OPENROUTER_API_KEY = "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"
 # Convert DICOM to image array + base64 string
 def dicom_to_image(filepath):
     dcm = pydicom.dcmread(filepath)
@@ -70,7 +69,7 @@ def call_openrouter_llm(prompt: str) -> str:
     # Clean the sign-off lines from the generated report
     def remove_sign_off(report_text):
         lines = report_text.strip().split('\n')
-        while lines and any(lines[-1].strip().startswith(keyword) for keyword in ["Sincerely","Radiologist:", "[Your Name]", "Dental Radiologist","Dr"]):
+        while lines and any(lines[-1].strip().startswith(keyword) for keyword in ["Sincerely","Radiologist:", "[Your Name]", "Dental Radiologist","Patient Name","Date of Exam"]):
             lines.pop()
         return '\n'.join(lines)
 
@@ -88,45 +87,51 @@ def draw_annotations(image, annotations):
     return image
 
 # Upload endpoint
+from fastapi.responses import JSONResponse
+import traceback
+
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
     try:
-        # Save uploaded DICOM file
+        print("✅ Step 1: Received file:", file.filename)
+
         filename = f"{uuid4()}_{file.filename}"
         file_path = os.path.join(UPLOAD_DIR, filename)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        print("✅ Step 2: Saved file to:", file_path)
 
-        # Convert DICOM to image
         image = dicom_to_image(file_path)
+        print("✅ Step 3: DICOM converted")
 
-        # Save temp image for Roboflow
         temp_img_path = file_path.replace(".dcm", ".jpg")
         cv2.imwrite(temp_img_path, image)
+        print("✅ Step 4: Saved temp JPG at:", temp_img_path)
 
-        # Roboflow inference
         result = roboflow_client.infer(temp_img_path, model_id="adr/6")
-        annotations = result.get("predictions", [])
+        print("✅ Step 5: Roboflow response:", result)
 
-        # Draw boxes
+        annotations = result.get("predictions", [])
+        print("✅ Step 6: Annotations:", annotations)
+
         annotated_image = draw_annotations(image.copy(), annotations)
 
-        # Prepare prompt for LLM
         prompt = "These are the detected dental conditions from X-ray:\n"
         for ann in annotations:
             prompt += f"- {ann['class']} at (x={ann['x']}, y={ann['y']}, w={ann['width']}, h={ann['height']})\n"
         prompt += "\nPlease write a diagnostic report."
 
-        # Call OpenRouter LLM to get the report
+        print("✅ Step 7: Prompt constructed")
         report = call_openrouter_llm(prompt)
+        print("✅ Step 8: LLM response:", report)
 
-        # Return results
         return JSONResponse(content={
             "annotated_image": image_to_base64(annotated_image),
             "report": report.strip()
         })
 
     except Exception as e:
+        print("❌ ERROR during upload:\n", traceback.format_exc())
         return JSONResponse(status_code=500, content={"message": f"Upload failed: {str(e)}"})
 
 # Root check
